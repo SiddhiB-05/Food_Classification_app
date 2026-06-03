@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+
+.env
+backend/.env
+
+tf_env/
+.venv/
+venv/
+
+model_training/dataset/
+model_training/food-101/
+model_training/kaggle.json
+
+backend/saved_model/*.keras
+backend/saved_model/*.h5
+!backend/saved_model/class_names.txt
