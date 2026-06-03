@@ -32,7 +32,7 @@ NUTRITION_DATA = {
 }
 
 USDA_SEARCH_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
-NUTRITIONIX_URL = "https://trackapi.nutritionix.com/v2/natural/nutrients"
+OPEN_FOOD_FACTS_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
 
 
 HEALTHY_ALTERNATIVES = {
@@ -53,38 +53,6 @@ def _fallback_nutrition(food_name):
             "fat_g": None,
         },
     ) | {"source": "local_estimate"}
-
-
-def _get_nutritionix(food_name):
-    app_id = os.getenv("NUTRITIONIX_APP_ID")
-    api_key = os.getenv("NUTRITIONIX_API_KEY")
-    if not app_id or not api_key:
-        return None
-
-    response = httpx.post(
-        NUTRITIONIX_URL,
-        headers={
-            "x-app-id": app_id,
-            "x-app-key": api_key,
-            "Content-Type": "application/json",
-        },
-        json={"query": f"1 serving {food_name.replace('_', ' ')}"},
-        timeout=8,
-    )
-    response.raise_for_status()
-    foods = response.json().get("foods", [])
-    if not foods:
-        return None
-
-    food = foods[0]
-    return {
-        "serving": f"{food.get('serving_qty', 1)} {food.get('serving_unit', 'serving')}",
-        "calories": food.get("nf_calories"),
-        "protein_g": food.get("nf_protein"),
-        "carbs_g": food.get("nf_total_carbohydrate"),
-        "fat_g": food.get("nf_total_fat"),
-        "source": "nutritionix",
-    }
 
 
 def _nutrient_value(nutrients, nutrient_name):
@@ -125,8 +93,42 @@ def _get_usda(food_name):
     }
 
 
+def _get_open_food_facts(food_name):
+    response = httpx.get(
+        OPEN_FOOD_FACTS_SEARCH_URL,
+        params={
+            "search_terms": food_name.replace("_", " "),
+            "search_simple": 1,
+            "action": "process",
+            "json": 1,
+            "page_size": 1,
+            "fields": "product_name,nutriments",
+        },
+        headers={"User-Agent": "SmartFoodNutritionAnalyzer/0.1"},
+        timeout=8,
+    )
+    response.raise_for_status()
+    products = response.json().get("products", [])
+    if not products:
+        return None
+
+    nutriments = products[0].get("nutriments", {})
+    calories = nutriments.get("energy-kcal_100g")
+    if calories is None:
+        calories = nutriments.get("energy-kcal")
+
+    return {
+        "serving": "100 g",
+        "calories": calories,
+        "protein_g": nutriments.get("proteins_100g"),
+        "carbs_g": nutriments.get("carbohydrates_100g"),
+        "fat_g": nutriments.get("fat_100g"),
+        "source": "open_food_facts",
+    }
+
+
 def get_nutrition(food_name):
-    for provider in (_get_nutritionix, _get_usda):
+    for provider in (_get_usda, _get_open_food_facts):
         try:
             nutrition = provider(food_name)
         except httpx.HTTPError:
