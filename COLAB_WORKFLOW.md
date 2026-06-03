@@ -36,6 +36,18 @@ Download Food-101 from Kaggle and prepare `train/val/test` folders:
 !python model_training/prepare_food101_dataset.py
 ```
 
+For the Global + Indian version, prepare Food-101 plus an Indian food dataset:
+
+```python
+!python model_training/prepare_global_indian_dataset.py --force
+```
+
+For a fast combined test run:
+
+```python
+!python model_training/prepare_global_indian_dataset.py --max-food101-classes 5 --max-indian-classes 5 --force
+```
+
 For a fast test run before full training, use only a few classes:
 
 ```python
