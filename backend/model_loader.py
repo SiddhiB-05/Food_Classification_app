@@ -1,3 +1,5 @@
+import base64
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +18,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 _model = None
 _class_names = None
+_base_grad_model = None
 
 
 def load_class_names():
@@ -72,6 +75,29 @@ def get_model():
     return _model, _class_names
 
 
+def _call_layer(layer, inputs):
+    try:
+        return layer(inputs, training=False)
+    except TypeError:
+        return layer(inputs)
+
+
+def get_base_grad_model():
+    global _base_grad_model
+
+    if _base_grad_model is None:
+        model, _ = get_model()
+        base_model = model.get_layer("efficientnetb0")
+        target_layer = base_model.get_layer("top_activation")
+        _base_grad_model = tf.keras.Model(
+            base_model.inputs,
+            [target_layer.output, base_model.output],
+            name="efficientnetb0_gradcam",
+        )
+
+    return _base_grad_model
+
+
 def preprocess_image(image):
     image = image.convert("RGB")
     image = image.resize(IMAGE_SIZE)
@@ -96,6 +122,98 @@ def predict_food(image):
             for class_name, score in zip(class_names, probabilities)
         },
     }
+
+
+def _classifier_head_from_base_output(model, base_output):
+    output = base_output
+    use_head = False
+    for layer in model.layers:
+        if use_head:
+            output = _call_layer(layer, output)
+        if layer.name == "efficientnetb0":
+            use_head = True
+    return output
+
+
+def _enhance_heatmap(heatmap):
+    heatmap = np.nan_to_num(heatmap, nan=0.0, posinf=0.0, neginf=0.0)
+    heatmap = np.clip(heatmap, 0.0, None)
+    max_value = heatmap.max()
+    if max_value <= 0:
+        return np.zeros_like(heatmap)
+
+    heatmap = heatmap / max_value
+    active_values = heatmap[heatmap > 0]
+    if active_values.size:
+        floor = np.percentile(active_values, 45)
+        if 0 < floor < 1:
+            heatmap = np.clip((heatmap - floor) / (1 - floor), 0, 1)
+
+    return np.power(heatmap, 0.7)
+
+
+def _heatmap_to_color(heatmap):
+    red = np.clip(2.2 * heatmap, 0, 1)
+    green = np.clip(2.2 * heatmap - 0.65, 0, 1)
+    blue = np.clip(2.2 * heatmap - 1.65, 0, 1) * 0.35
+    return np.stack([red, green, blue], axis=-1) * 255.0
+
+
+def _heatmap_to_overlay(image, heatmap):
+    image = image.convert("RGB")
+    image_array = np.array(image, dtype=np.float32)
+
+    heatmap_image = Image.fromarray(np.uint8(255 * heatmap)).resize(
+        image.size,
+        Image.Resampling.BILINEAR,
+    )
+    heatmap_array = np.array(heatmap_image, dtype=np.float32) / 255.0
+    heatmap_array = _enhance_heatmap(heatmap_array)
+
+    color_map = _heatmap_to_color(heatmap_array)
+    focus_strength = heatmap_array[..., None]
+    dimmed_image = image_array * (0.38 + 0.62 * focus_strength)
+
+    alpha = np.clip(0.18 + 0.72 * focus_strength, 0, 0.9)
+    alpha = np.where(focus_strength > 0.04, alpha, 0)
+    overlay = dimmed_image * (1 - alpha) + color_map * alpha
+    overlay = np.clip(overlay, 0, 255).astype(np.uint8)
+
+    buffer = BytesIO()
+    Image.fromarray(overlay).save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
+
+
+def generate_gradcam(image, class_index=None):
+    model, _ = get_model()
+    base_grad_model = get_base_grad_model()
+    image_batch = preprocess_image(image)
+
+    with tf.GradientTape() as tape:
+        augmented = model.get_layer("data_augmentation")(image_batch, training=False)
+        conv_outputs, base_output = base_grad_model(augmented, training=False)
+        tape.watch(conv_outputs)
+        predictions = _classifier_head_from_base_output(model, base_output)
+        if class_index is None:
+            class_index = tf.argmax(predictions[0])
+        class_score = predictions[:, class_index]
+
+    gradients = tape.gradient(class_score, conv_outputs)
+    if gradients is None:
+        raise ValueError("Could not calculate Grad-CAM gradients.")
+
+    pooled_gradients = tf.reduce_mean(gradients, axis=(0, 1, 2))
+    conv_outputs = conv_outputs[0]
+    heatmap = tf.reduce_sum(conv_outputs * pooled_gradients, axis=-1)
+    heatmap = tf.maximum(heatmap, 0)
+    max_value = tf.reduce_max(heatmap)
+    if float(max_value) == 0:
+        heatmap = tf.zeros_like(heatmap)
+    else:
+        heatmap = heatmap / max_value
+
+    return _heatmap_to_overlay(image, heatmap.numpy())
 
 
 def open_image_from_bytes(image_bytes):

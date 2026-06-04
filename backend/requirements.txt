@@ -6,3 +6,6 @@ pillow
 numpy
 httpx
 python-dotenv
+sqlalchemy
+psycopg2-binary
+email-validator
