@@ -36,16 +36,29 @@ Download Food-101 from Kaggle and prepare `train/val/test` folders:
 !python model_training/prepare_food101_dataset.py
 ```
 
-For the Global + Indian version, prepare Food-101 plus an Indian food dataset:
+For the Global + Indian version, prepare selected Food-101 classes plus the default Indian datasets:
 
 ```python
-!python model_training/prepare_global_indian_dataset.py --force
+!python model_training/prepare_global_indian_dataset.py --clean-output --force
+```
+
+The default Indian Kaggle sources are:
+
+```text
+iamsouravbanerjee/indian-food-images-dataset
+kashyap077/indian-food-images-for-model-fine-tuning-2026
+```
+
+If you manually upload/download another ImageFolder-style Indian dataset such as Khana, add it like this:
+
+```python
+!python model_training/prepare_global_indian_dataset.py --clean-output --force --local-indian-roots /content/khana_dataset
 ```
 
 For a fast combined test run:
 
 ```python
-!python model_training/prepare_global_indian_dataset.py --max-food101-classes 5 --max-indian-classes 5 --force
+!python model_training/prepare_global_indian_dataset.py --max-food101-classes 5 --max-indian-classes 5 --clean-output --force
 ```
 
 For a fast test run before full training, use only a few classes:
