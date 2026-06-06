@@ -103,6 +103,7 @@ async def predict(file: UploadFile = File(...)):
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
+        print("PREDICTION ERROR:", repr(exc))
         raise HTTPException(status_code=500, detail="Prediction failed.") from exc
 
     food_name = prediction["food"]
