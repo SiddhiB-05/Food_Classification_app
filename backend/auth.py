@@ -24,7 +24,14 @@ except ImportError:
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "change-this-dev-secret")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+if not AUTH_SECRET_KEY:
+    import warnings
+    warnings.warn(
+        "AUTH_SECRET_KEY environment variable is not set! Using default dev key which is highly insecure for production."
+    )
+    AUTH_SECRET_KEY = "change-this-dev-secret"
+
 TOKEN_EXPIRE_SECONDS = 60 * 60 * 24 * 7
 HASH_ITERATIONS = 180_000
 bearer_scheme = HTTPBearer(auto_error=False)

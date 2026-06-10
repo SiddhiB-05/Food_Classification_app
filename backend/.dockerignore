@@ -1,0 +1,25 @@
+# Ignore git metadata
+.git
+.gitignore
+
+# Ignore local environment keys
+.env
+.env.example
+
+# Ignore Python cache and virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+tf_env/
+venv/
+env/
+
+# Ignore local database files
+*.db
+*.sqlite
+
+# Ignore agent skills and caches
+.agents/
+.gemini_cache.json

@@ -13,6 +13,14 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    # Neon or other cloud Postgres providers might return a URL starting with postgres://,
+    # which SQLAlchemy 1.4+ rejects. Also ensure psycopg2 driver is explicitly used.
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+    elif DATABASE_URL.startswith("postgresql://") and not DATABASE_URL.startswith("postgresql+psycopg2://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True) if DATABASE_URL else None
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False) if engine else None
 
