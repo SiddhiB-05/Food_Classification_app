@@ -61,15 +61,22 @@ def get_model():
     if _model is None:
         _class_names = load_class_names()
 
-        if MODEL_PATH.exists():
-            _model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-        elif WEIGHTS_PATH.exists():
+        # Prefer loading weights because .keras file has
+        # Keras version compatibility issues on HF Spaces
+        if WEIGHTS_PATH.exists():
             _model = build_model(num_classes=len(_class_names))
             _model.load_weights(WEIGHTS_PATH)
+
+        elif MODEL_PATH.exists():
+            _model = tf.keras.models.load_model(
+                MODEL_PATH,
+                compile=False,
+            )
+
         else:
             raise FileNotFoundError(
-                f"Model file not found: {MODEL_PATH}. "
-                f"Fallback weights file also not found: {WEIGHTS_PATH}"
+                f"Model weights not found: {WEIGHTS_PATH}. "
+                f"Full model also not found: {MODEL_PATH}"
             )
 
     return _model, _class_names
