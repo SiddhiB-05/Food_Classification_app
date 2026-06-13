@@ -39,7 +39,7 @@ function scaleNutritionValue(value, factor) {
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem("food_auth_token") || "");
   const [currentUser, setCurrentUser] = useState(null);
-  const [authMode, setAuthMode] = useState("login");
+  const [viewMode, setViewMode] = useState("landing"); // "landing", "login", "signup"
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
   const [checkingAuth, setCheckingAuth] = useState(Boolean(token));
   const [mealDate, setMealDate] = useState(today());
@@ -55,6 +55,7 @@ export default function App() {
   const [loadingMeals, setLoadingMeals] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [showAlternative, setShowAlternative] = useState(false);
 
   const nutrition = prediction?.nutrition || {};
   const validPortionGrams = Math.max(Number(portionGrams) || 0, 0);
@@ -117,9 +118,9 @@ export default function App() {
     setAuthLoading(true);
     setMessage("");
 
-    const endpoint = authMode === "signup" ? "/auth/signup" : "/auth/login";
+    const endpoint = viewMode === "signup" ? "/auth/signup" : "/auth/login";
     const payload =
-      authMode === "signup"
+      viewMode === "signup"
         ? authForm
         : { email: authForm.email, password: authForm.password };
 
@@ -149,6 +150,7 @@ export default function App() {
     setMeals([]);
     setSummary(null);
     setMessage("");
+    setViewMode("landing");
   }
 
   function selectImage(file) {
@@ -156,6 +158,7 @@ export default function App() {
     setPrediction(null);
     setPortionGrams(100);
     setMessage("");
+    setShowAlternative(false);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(file ? URL.createObjectURL(file) : "");
   }
@@ -169,6 +172,7 @@ export default function App() {
 
     setLoadingPredict(true);
     setMessage("");
+    setShowAlternative(false);
 
     const formData = new FormData();
     formData.append("file", imageFile);
@@ -270,6 +274,64 @@ export default function App() {
   }
 
   if (!currentUser) {
+    if (viewMode === "landing") {
+      return (
+        <main className="landing-shell">
+          <header className="landing-header">
+            <div className="landing-logo">
+              <Utensils size={22} />
+              <span>SmartFood AI</span>
+            </div>
+            <button className="secondary-btn" onClick={() => setViewMode("login")}>
+              Sign In
+            </button>
+          </header>
+
+          <section className="hero-section">
+            <div className="badge">Your Personal Nutrition Assistant</div>
+            <h1>Track your nutrition journey with AI precision</h1>
+            <p className="hero-tagline">
+              Log meals visually, track calorie goals effortlessly, and achieve your health objectives with instant deep learning analytics.
+            </p>
+            <div className="hero-ctas">
+              <button className="primary-btn" onClick={() => setViewMode("signup")}>
+                Get Started
+              </button>
+              <button className="secondary-btn" onClick={() => setViewMode("login")}>
+                Sign In
+              </button>
+            </div>
+          </section>
+
+          <section className="features-grid">
+            <div className="feature-card">
+              <div className="feature-icon camera-bg">
+                <Camera size={22} />
+              </div>
+              <h3>AI Food Detection</h3>
+              <p>Upload a picture of your plate. Our trained convolutional neural network model identifies the dish instantly with high confidence.</p>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon nutrition-bg">
+                <ShieldCheck size={22} />
+              </div>
+              <h3>Nutrition Breakdown</h3>
+              <p>Get instant calorie, protein, carbohydrate, and fat estimates scaled perfectly to your portion weight.</p>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon tracker-bg">
+                <CalendarDays size={22} />
+              </div>
+              <h3>Daily Tracker & Swaps</h3>
+              <p>Log your meals to a visual timeline calendar, track summary metrics, and discover healthier meal alternatives.</p>
+            </div>
+          </section>
+        </main>
+      );
+    }
+
     return (
       <main className="auth-shell">
         <form className="auth-card" onSubmit={submitAuth}>
@@ -277,13 +339,13 @@ export default function App() {
             <ShieldCheck size={28} aria-hidden="true" />
             <div>
               <p className="eyebrow">Personal tracker</p>
-              <h1>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h1>
+              <h1>{viewMode === "signup" ? "Create Account" : "Welcome Back"}</h1>
             </div>
           </div>
 
           {message && <div className="notice">{message}</div>}
 
-          {authMode === "signup" && (
+          {viewMode === "signup" && (
             <label className="auth-field">
               <User size={18} aria-hidden="true" />
               <input
@@ -320,19 +382,32 @@ export default function App() {
 
           <button className="primary-btn wide-btn" type="submit" disabled={authLoading}>
             {authLoading ? <Loader2 className="spin" size={18} /> : <LogIn size={18} />}
-            {authMode === "signup" ? "Sign Up" : "Log In"}
+            {viewMode === "signup" ? "Sign Up" : "Log In"}
           </button>
 
-          <button
-            className="link-btn"
-            type="button"
-            onClick={() => {
-              setMessage("");
-              setAuthMode(authMode === "signup" ? "login" : "signup");
-            }}
-          >
-            {authMode === "signup" ? "Already have an account? Log in" : "New here? Create an account"}
-          </button>
+          <div className="auth-footer-links">
+            <button
+              className="link-btn"
+              type="button"
+              onClick={() => {
+                setMessage("");
+                setViewMode(viewMode === "signup" ? "login" : "signup");
+              }}
+            >
+              {viewMode === "signup" ? "Already have an account? Log in" : "New here? Create an account"}
+            </button>
+
+            <button
+              className="link-btn back-btn"
+              type="button"
+              onClick={() => {
+                setMessage("");
+                setViewMode("landing");
+              }}
+            >
+              ← Back to Home
+            </button>
+          </div>
         </form>
       </main>
     );
@@ -434,18 +509,28 @@ export default function App() {
                 : !hasNutritionData
                   ? "Nutrition data is unavailable because the configured APIs did not return a match."
                   : isPer100Gram
-                ? `Values are scaled from a ${nutrition.serving} estimate.`
-                : `Values use ${nutrition.serving || "standard serving"} estimate.`}
+                    ? `Values are scaled from a ${nutrition.serving} estimate.`
+                    : `Values use ${nutrition.serving || "standard serving"} estimate.`}
             </p>
           </div>
 
           <div className="suggestion">
             <Utensils size={18} aria-hidden="true" />
-            <p>
-              {prediction
-                ? prediction.healthy_alternative || "Healthy alternative is unavailable. Add a Gemini API key to fetch it."
-                : "Analyze a food image to see a healthier swap."}
-            </p>
+            {!prediction ? (
+              <p>Analyze a food image to see a healthier swap.</p>
+            ) : !showAlternative ? (
+              <button
+                type="button"
+                className="suggestion-btn"
+                onClick={() => setShowAlternative(true)}
+              >
+                See Healthy Alternative
+              </button>
+            ) : (
+              <p>
+                {prediction.healthy_alternative || "Healthy alternative is unavailable. Add a Gemini API key to fetch it."}
+              </p>
+            )}
           </div>
 
           <div className="save-row">
