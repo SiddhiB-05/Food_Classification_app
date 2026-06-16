@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   Camera,
+  Home,
   Loader2,
   Lock,
   LogIn,
@@ -104,6 +105,7 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Session expired.");
       setCurrentUser(data);
+      setViewMode("dashboard");
     } catch {
       localStorage.removeItem("food_auth_token");
       setToken("");
@@ -136,6 +138,7 @@ export default function App() {
       setToken(data.access_token);
       setCurrentUser(data.user);
       setAuthForm({ name: "", email: "", password: "" });
+      setViewMode("dashboard");
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -273,65 +276,79 @@ export default function App() {
     );
   }
 
-  if (!currentUser) {
-    if (viewMode === "landing") {
-      return (
-        <main className="landing-shell">
-          <header className="landing-header">
-            <div className="landing-logo">
-              <Utensils size={22} />
-              <span>SmartFood AI</span>
-            </div>
+  if (viewMode === "landing") {
+    return (
+      <main className="landing-shell">
+        <header className="landing-header">
+          <div className="landing-logo">
+            <Utensils size={22} />
+            <span>SmartFood AI</span>
+          </div>
+          {currentUser ? (
+            <button className="primary-btn" onClick={() => setViewMode("dashboard")}>
+              Go to Dashboard
+            </button>
+          ) : (
             <button className="secondary-btn" onClick={() => setViewMode("login")}>
               Sign In
             </button>
-          </header>
+          )}
+        </header>
 
-          <section className="hero-section">
-            <div className="badge">Your Personal Nutrition Assistant</div>
-            <h1>Track your nutrition journey with AI precision</h1>
-            <p className="hero-tagline">
-              Log meals visually, track calorie goals effortlessly, and achieve your health objectives with instant deep learning analytics.
-            </p>
-            <div className="hero-ctas">
-              <button className="primary-btn" onClick={() => setViewMode("signup")}>
-                Get Started
+        <section className="hero-section">
+          <div className="badge">Your Personal Nutrition Assistant</div>
+          <h1>Track your nutrition journey with AI precision</h1>
+          <p className="hero-tagline">
+            Log meals visually, track calorie goals effortlessly, and achieve your health objectives with instant deep learning analytics.
+          </p>
+          <div className="hero-ctas">
+            {currentUser ? (
+              <button className="primary-btn" onClick={() => setViewMode("dashboard")}>
+                Go to Dashboard
               </button>
-              <button className="secondary-btn" onClick={() => setViewMode("login")}>
-                Sign In
-              </button>
-            </div>
-          </section>
+            ) : (
+              <>
+                <button className="primary-btn" onClick={() => setViewMode("signup")}>
+                  Get Started
+                </button>
+                <button className="secondary-btn" onClick={() => setViewMode("login")}>
+                  Sign In
+                </button>
+              </>
+            )}
+          </div>
+        </section>
 
-          <section className="features-grid">
-            <div className="feature-card">
-              <div className="feature-icon camera-bg">
-                <Camera size={22} />
-              </div>
-              <h3>AI Food Detection</h3>
-              <p>Upload a picture of your plate. Our trained convolutional neural network model identifies the dish instantly with high confidence.</p>
+        <section className="features-grid">
+          <div className="feature-card">
+            <div className="feature-icon camera-bg">
+              <Camera size={22} />
             </div>
+            <h3>AI Food Detection</h3>
+            <p>Upload a picture of your plate. Our trained convolutional neural network model identifies the dish instantly with high confidence.</p>
+          </div>
 
-            <div className="feature-card">
-              <div className="feature-icon nutrition-bg">
-                <ShieldCheck size={22} />
-              </div>
-              <h3>Nutrition Breakdown</h3>
-              <p>Get instant calorie, protein, carbohydrate, and fat estimates scaled perfectly to your portion weight.</p>
+          <div className="feature-card">
+            <div className="feature-icon nutrition-bg">
+              <ShieldCheck size={22} />
             </div>
+            <h3>Nutrition Breakdown</h3>
+            <p>Get instant calorie, protein, carbohydrate, and fat estimates scaled perfectly to your portion weight.</p>
+          </div>
 
-            <div className="feature-card">
-              <div className="feature-icon tracker-bg">
-                <CalendarDays size={22} />
-              </div>
-              <h3>Daily Tracker & Swaps</h3>
-              <p>Log your meals to a visual timeline calendar, track summary metrics, and discover healthier meal alternatives.</p>
+          <div className="feature-card">
+            <div className="feature-icon tracker-bg">
+              <CalendarDays size={22} />
             </div>
-          </section>
-        </main>
-      );
-    }
+            <h3>Daily Tracker & Swaps</h3>
+            <p>Log your meals to a visual timeline calendar, track summary metrics, and discover healthier meal alternatives.</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
+  if (!currentUser) {
     return (
       <main className="auth-shell">
         <form className="auth-card" onSubmit={submitAuth}>
@@ -426,7 +443,10 @@ export default function App() {
             <strong>{currentUser.name}</strong>
             <span>{currentUser.email}</span>
           </div>
-          <button onClick={logout} aria-label="Log out">
+          <button className="home-btn" onClick={() => setViewMode("landing")} aria-label="Go to Home">
+            <Home size={18} />
+          </button>
+          <button className="logout-btn" onClick={logout} aria-label="Log out">
             <LogOut size={18} />
           </button>
         </div>

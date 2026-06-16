@@ -342,9 +342,14 @@ h2 {
   flex-shrink: 0;
 }
 
-.identity.locked button:hover {
+.identity.locked button.logout-btn:hover {
   background-color: #fee2e2;
   color: #dc2626;
+}
+
+.identity.locked button.home-btn:hover {
+  background-color: var(--color-accent-light);
+  color: var(--color-accent);
 }
 
 /* Notice/Alert Banner */
