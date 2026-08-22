@@ -1,19 +1,36 @@
 from io import BytesIO
 from datetime import date
+import time
+from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent / ".env")
+load_dotenv()
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.exc import SQLAlchemyError
 
 try:
     import meal_tracker
     import auth
     from model_loader import generate_gradcam, open_image_from_bytes, predict_food
     from nutrition_data import get_healthy_alternative, get_nutrition
+    from nutrition_assistant import (
+        NutritionChatRequest,
+        NutritionChatResponse,
+        generate_nutrition_chat,
+    )
 except ImportError:
     from backend import meal_tracker
     from backend import auth
     from backend.model_loader import generate_gradcam, open_image_from_bytes, predict_food
     from backend.nutrition_data import get_healthy_alternative, get_nutrition
+    from backend.nutrition_assistant import (
+        NutritionChatRequest,
+        NutritionChatResponse,
+        generate_nutrition_chat,
+    )
 
 
 app = FastAPI(
@@ -25,7 +42,17 @@ app = FastAPI(
 
 @app.on_event("startup")
 def startup():
-    meal_tracker.init_db()
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            meal_tracker.init_db()
+            return
+        except (RuntimeError, SQLAlchemyError) as exc:
+            last_error = exc
+            print(f"DATABASE STARTUP ERROR attempt {attempt}/3:", repr(exc))
+            time.sleep(1.5 * attempt)
+
+    print("DATABASE STARTUP ERROR: continuing without an active database.", repr(last_error))
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,10 +76,11 @@ def health_check():
     return {"status": "ok"}
 
 
-def _database_error():
+def _database_error(exc=None):
+    detail = str(exc) if exc else "Meal tracker database is unavailable. Check DATABASE_URL and Neon connectivity."
     return HTTPException(
         status_code=503,
-        detail="Meal tracker database is not configured. Set DATABASE_URL in backend/.env.",
+        detail=detail,
     )
 
 
@@ -61,8 +89,10 @@ def signup(signup_data: auth.SignupRequest):
     try:
         user = auth.signup_user(signup_data)
         return auth.token_response(user)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
 
 @app.post("/auth/login", response_model=auth.TokenResponse)
@@ -70,8 +100,10 @@ def login(login_data: auth.LoginRequest):
     try:
         user = auth.authenticate_user(login_data)
         return auth.token_response(user)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
 
 @app.get("/me", response_model=auth.UserResponse)
@@ -119,6 +151,22 @@ async def predict(file: UploadFile = File(...)):
     }
 
 
+@app.post("/nutrition-chat", response_model=NutritionChatResponse)
+def nutrition_chat(
+    chat_request: NutritionChatRequest,
+    current_user: auth.User = Depends(auth.get_current_user),
+):
+    try:
+        meals = meal_tracker.list_meals(current_user.email, chat_request.meal_date)
+        summary = meal_tracker.meal_summary(current_user.email, chat_request.meal_date)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
+
+    return generate_nutrition_chat(chat_request, summary, meals)
+
+
 @app.post("/meals", response_model=meal_tracker.MealResponse)
 def add_meal(
     meal: meal_tracker.MealCreate,
@@ -126,8 +174,10 @@ def add_meal(
 ):
     try:
         return meal_tracker.create_meal(meal, current_user.email)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
 
 @app.get("/meals", response_model=list[meal_tracker.MealResponse])
@@ -137,8 +187,10 @@ def get_meals(
 ):
     try:
         return meal_tracker.list_meals(current_user.email, meal_date)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
 
 @app.get("/meals/summary")
@@ -148,8 +200,10 @@ def get_meal_summary(
 ):
     try:
         return meal_tracker.meal_summary(current_user.email, meal_date)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
 
 @app.delete("/meals/{meal_id}")
@@ -159,8 +213,10 @@ def remove_meal(
 ):
     try:
         deleted = meal_tracker.delete_meal(meal_id, current_user.email)
-    except RuntimeError as exc:
-        raise _database_error() from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _database_error(exc) from exc
 
     if not deleted:
         raise HTTPException(status_code=404, detail="Meal not found.")

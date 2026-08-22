@@ -7,6 +7,7 @@ A full-stack AI-powered food analysis platform that identifies food items from i
 * Food image classification using TensorFlow and EfficientNetB0
 * Nutrition estimation (calories, protein, carbohydrates, and fat)
 * Healthy food alternative recommendations
+* AI Nutrition Assistant chatbot with preset meal guidance prompts
 * Grad-CAM visualization to explain model predictions
 * User authentication with secure JWT-based login and signup
 * Daily meal tracking and nutrition summary dashboard
@@ -21,8 +22,9 @@ A full-stack AI-powered food analysis platform that identifies food items from i
 2. EfficientNetB0-based CNN predicts the food category.
 3. Grad-CAM generates a visual explanation highlighting important regions used for prediction.
 4. Nutrition information is retrieved and aggregated from multiple sources.
-5. A healthier food alternative is suggested.
-6. User can save meals to a personal nutrition tracker.
+5. Gemini + LangChain RAG retrieves nutrition guidance from a FAISS knowledge base.
+6. The assistant answers healthier-swap, next-meal, daily-intake, and protein questions.
+7. User can save meals to a personal nutrition tracker.
 
 ## Tech Stack
 
@@ -41,6 +43,10 @@ A full-stack AI-powered food analysis platform that identifies food items from i
 * SQLAlchemy
 * PostgreSQL
 * JWT Authentication
+* LangChain
+* FAISS
+* Gemini API
+* Google/Gemini embeddings
 
 ### Frontend
 

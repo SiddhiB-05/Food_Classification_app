@@ -12,13 +12,13 @@ from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column
 
 try:
-    from meal_tracker import Base, get_db_session
+    import neon_http_db
+    from neon_http_db import User
 except ImportError:
-    from backend.meal_tracker import Base, get_db_session
+    from backend import neon_http_db
+    from backend.neon_http_db import User
 
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -28,23 +28,13 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
 if not AUTH_SECRET_KEY:
     import warnings
     warnings.warn(
-        "AUTH_SECRET_KEY environment variable is not set! Using default dev key which is highly insecure for production."
+        "AUTH_SECRET_KEY environment variable is not set! Using default dev key."
     )
     AUTH_SECRET_KEY = "change-this-dev-secret"
 
 TOKEN_EXPIRE_SECONDS = 60 * 60 * 24 * 7
 HASH_ITERATIONS = 180_000
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    name: Mapped[str] = mapped_column(String(120))
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class SignupRequest(BaseModel):
@@ -168,29 +158,24 @@ def normalize_email(email):
 
 def signup_user(signup_data):
     email = normalize_email(signup_data.email)
-    with get_db_session() as db:
-        existing_user = db.query(User).filter(User.email == email).first()
-        if existing_user:
-            raise HTTPException(status_code=409, detail="Email is already registered.")
+    existing_user = neon_http_db.get_user_by_email(email)
+    if existing_user:
+        raise HTTPException(status_code=409, detail="Email is already registered.")
 
-        user = User(
-            name=signup_data.name.strip(),
-            email=email,
-            password_hash=hash_password(signup_data.password),
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
+    user = neon_http_db.create_user(
+        name=signup_data.name.strip(),
+        email=email,
+        password_hash=hash_password(signup_data.password),
+    )
+    return user
 
 
 def authenticate_user(login_data):
     email = normalize_email(login_data.email)
-    with get_db_session() as db:
-        user = db.query(User).filter(User.email == email).first()
-        if not user or not verify_password(login_data.password, user.password_hash):
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
-        return user
+    user = neon_http_db.get_user_by_email(email)
+    if not user or not verify_password(login_data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+    return user
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)):
@@ -202,11 +187,16 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_
     if not email:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
 
-    with get_db_session() as db:
-        user = db.query(User).filter(User.email == normalize_email(email)).first()
+    try:
+        user = neon_http_db.get_user_by_email(normalize_email(email))
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
         return user
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Neon Postgres database error: {exc}",
+        ) from exc
 
 
 def token_response(user):

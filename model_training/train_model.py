@@ -50,22 +50,9 @@ def build_model(num_classes):
     )
     base_model.trainable = False
 
-#     Tab EfficientNet apne features ko food images ke according aur improve karta hai.
-
-# General Vision Knowledge
-#            ↓
-# Food Specific Knowledge
-
-# Ye process fine-tuning kehlata hai.
-
     inputs = tf.keras.Input(shape=(*IMAGE_SIZE, 3))
     x = data_augmentation(inputs)
     x = tf.keras.applications.efficientnet.preprocess_input(x)
-#     0 → 255
-
-# CNN directly ye values pasand nahi karta.
-
-# Ye function image ko EfficientNet ke expected format mein convert karta hai.
     x = base_model(x, training=False)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     x = tf.keras.layers.Dropout(0.3)(x)

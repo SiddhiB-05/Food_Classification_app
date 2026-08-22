@@ -15,12 +15,14 @@ OPEN_FOOD_FACTS_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
 FATSECRET_TOKEN_URL = "https://oauth.fatsecret.com/connect/token"
 FATSECRET_SEARCH_URL = "https://platform.fatsecret.com/rest/foods/search/v2"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 FALLBACK_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
     "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
 ]
 MAX_RETRIES = 3
 CACHE_FILE = Path(__file__).resolve().parent / ".gemini_cache.json"
@@ -160,7 +162,7 @@ def _set_cached_gemini_value(cache_key, value):
 
 def _generation_config_for_model(model, generation_config):
     model_config = generation_config.copy()
-    if model.startswith("gemini-2.5") and "thinkingConfig" not in model_config:
+    if "thinkingConfig" not in model_config:
         model_config["thinkingConfig"] = {"thinkingBudget": 0}
     return model_config
 
@@ -363,26 +365,53 @@ def _parse_json_object(text):
         return None
 
 
+def _extract_number(data, keys):
+    if not isinstance(data, dict):
+        return None
+    for k in keys:
+        if k in data:
+            v = data[k]
+            if isinstance(v, (int, float)):
+                return float(v)
+            if isinstance(v, str):
+                try:
+                    return float(v.replace("g", "").replace("kcal", "").strip())
+                except ValueError:
+                    pass
+            if isinstance(v, dict):
+                val = v.get("value") if "value" in v else v.get("total")
+                if isinstance(val, (int, float)):
+                    return float(val)
+                if isinstance(val, dict) and "value" in val and isinstance(val["value"], (int, float)):
+                    return float(val["value"])
+    for v in data.values():
+        if isinstance(v, dict):
+            res = _extract_number(v, keys)
+            if res is not None:
+                return res
+    return None
+
+
 def _get_gemini_nutrition(food_name):
     normalized_food = food_name.strip().lower()
-    cache_key = f"nutrition:v1:{normalized_food}"
+    cache_key = f"nutrition:v3:{normalized_food}"
     cached_nutrition = _get_cached_gemini_value(cache_key)
-    if isinstance(cached_nutrition, dict):
+    if isinstance(cached_nutrition, dict) and _has_any_nutrition_value(cached_nutrition):
         return cached_nutrition
 
     prompt = (
-        "Estimate nutrition for this food as JSON only. "
-        "Use a common serving size for an Indian user when relevant. "
-        "Return exactly these keys: serving, calories, protein_g, carbs_g, fat_g. "
-        "Use numbers for nutrition values and null if uncertain. "
-        f"Food: {food_name.replace('_', ' ')}"
+        "Estimate average nutrition for 1 standard serving of this food as JSON only. "
+        "Use an Indian serving portion when relevant. "
+        "Output ONLY a flat JSON object with these exact keys: "
+        '{"serving": "1 serving", "calories": 250, "protein_g": 5, "carbs_g": 30, "fat_g": 12}. '
+        f"Food item: {food_name.replace('_', ' ')}"
     )
 
     text = _gemini_generate_text(
         prompt,
         {
-            "temperature": 0.2,
-            "maxOutputTokens": 120,
+            "temperature": 0.1,
+            "maxOutputTokens": 800,
             "responseMimeType": "application/json",
         },
     )
@@ -390,12 +419,18 @@ def _get_gemini_nutrition(food_name):
     if not data:
         return None
 
+    calories = _extract_number(data, ["calories", "energy", "energy_kcal", "kcal"])
+    protein = _extract_number(data, ["protein_g", "protein", "proteins"])
+    carbs = _extract_number(data, ["carbs_g", "carbs", "carbohydrates", "carbohydrate"])
+    fat = _extract_number(data, ["fat_g", "fat", "fats", "total_fat"])
+    serving = data.get("serving") or data.get("serving_size") or "1 serving"
+
     nutrition = {
-        "serving": data.get("serving"),
-        "calories": _to_float(data.get("calories")),
-        "protein_g": _to_float(data.get("protein_g")),
-        "carbs_g": _to_float(data.get("carbs_g")),
-        "fat_g": _to_float(data.get("fat_g")),
+        "serving": str(serving),
+        "calories": calories,
+        "protein_g": protein,
+        "carbs_g": carbs,
+        "fat_g": fat,
         "source": "gemini_estimate",
     }
     if not _has_any_nutrition_value(nutrition):
@@ -408,7 +443,12 @@ def _get_gemini_nutrition(food_name):
 def get_nutrition(food_name):
     nutrition_results = []
 
-    for provider in (_get_fatsecret, _get_usda, _get_open_food_facts, _get_gemini_nutrition):
+    for provider in (
+        _get_fatsecret,
+        _get_usda,
+        _get_open_food_facts,
+        _get_gemini_nutrition,
+    ):
         try:
             nutrition = provider(food_name)
         except httpx.HTTPError:

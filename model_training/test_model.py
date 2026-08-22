@@ -34,7 +34,7 @@ def preprocess_image(image_path):
     return np.expand_dims(image_array, axis=0)
 
 
-def build_model(num_classes):
+def build_model(num_classes):  #bcz weight.h5 contains weights not architecture
     data_augmentation = tf.keras.Sequential(
         [
             tf.keras.layers.RandomFlip("horizontal"),

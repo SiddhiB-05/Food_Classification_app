@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  Bot,
   CalendarDays,
   Camera,
   Home,
@@ -8,20 +9,148 @@ import {
   LogIn,
   LogOut,
   Mail,
+  MessageCircle,
   Plus,
   RefreshCw,
+  Send,
   ShieldCheck,
   Trash2,
   Upload,
   User,
   Utensils,
+  X,
 } from "lucide-react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8001";
 const mealTypes = ["breakfast", "lunch", "dinner", "snack"];
+let assistantActions = [
+  {
+    id: "healthier_alternative",
+    icon: "🥗",
+    label: "Healthier alternative",
+    prompt: "Suggest one healthier alternative for {food} and explain why.",
+  },
+  {
+    id: "next_meal",
+    icon: "🍽️",
+    label: "Suggest my next meal",
+    prompt: "Suggest my next meal after eating {food}.",
+  },
+  {
+    id: "today_intake",
+    icon: "📊",
+    label: "Analyze today's intake",
+    prompt: "Analyze today's intake using my saved meals and this detected food.",
+  },
+  {
+    id: "increase_protein",
+    icon: "💪",
+    label: "Increase protein",
+    prompt: "How can I increase protein while eating {food}?",
+  },
+];
+
+let foodEmojiMap = {
+  biryani: "🍛",
+  burger: "🍔",
+  cake: "🍰",
+  chicken: "🍗",
+  dosa: "🥞",
+  fries: "🍟",
+  ice_cream: "🍨",
+  pasta: "🍝",
+  pizza: "🍕",
+  rice: "🍚",
+  salad: "🥗",
+  sandwich: "🥪",
+  sushi: "🍣",
+};
+
+assistantActions = [
+  {
+    id: "healthier_alternative",
+    icon: "\u{1F957}",
+    label: "Healthier alternative",
+    prompt: "Suggest one healthier alternative for {food} and explain why.",
+  },
+  {
+    id: "next_meal",
+    icon: "\u{1F37D}\uFE0F",
+    label: "Suggest my next meal",
+    prompt: "Suggest my next meal after eating {food}.",
+  },
+  {
+    id: "today_intake",
+    icon: "\u{1F4CA}",
+    label: "Analyze today's intake",
+    prompt: "Analyze today's intake using my saved meals and this detected food.",
+  },
+  {
+    id: "increase_protein",
+    icon: "\u{1F4AA}",
+    label: "Increase protein",
+    prompt: "How can I increase protein while eating {food}?",
+  },
+];
+
+const trackerAssistantActions = [
+  {
+    id: "today_food_log",
+    icon: "\u{1F4CB}",
+    label: "What did I eat today?",
+    prompt: "Tell me what I have eaten today from my saved meal tracker.",
+  },
+  {
+    id: "today_intake",
+    icon: "\u{1F4CA}",
+    label: "Analyze today's intake",
+    prompt: "Analyze today's intake using my saved meals.",
+  },
+  {
+    id: "next_meal",
+    icon: "\u{1F37D}\uFE0F",
+    label: "Suggest my next meal",
+    prompt: "Suggest my next meal based on today's saved meals.",
+  },
+  {
+    id: "increase_protein",
+    icon: "\u{1F4AA}",
+    label: "Increase protein",
+    prompt: "How can I increase protein based on today's saved meals?",
+  },
+];
+
+foodEmojiMap = {
+  biryani: "\u{1F35B}",
+  burger: "\u{1F354}",
+  cake: "\u{1F370}",
+  chicken: "\u{1F357}",
+  dosa: "\u{1F95E}",
+  fries: "\u{1F35F}",
+  ice_cream: "\u{1F368}",
+  jalebi: "\u{1F36F}",
+  pasta: "\u{1F35D}",
+  pizza: "\u{1F355}",
+  rice: "\u{1F35A}",
+  salad: "\u{1F957}",
+  sandwich: "\u{1F96A}",
+  sushi: "\u{1F363}",
+};
 
 function formatFoodName(value) {
   return value ? value.replaceAll("_", " ") : "No prediction yet";
+}
+
+function getFoodEmojiOld(value) {
+  const normalized = (value || "").toLowerCase();
+  const match = Object.keys(foodEmojiMap).find((key) => normalized.includes(key));
+  return match ? foodEmojiMap[match] : "🍽️";
+}
+
+function getFoodEmoji(value) {
+  const normalized = (value || "").toLowerCase();
+  const match = Object.keys(foodEmojiMap).find((key) => normalized.includes(key));
+  return match ? foodEmojiMap[match] : "\u{1F37D}\uFE0F";
 }
 
 function today() {
@@ -35,6 +164,51 @@ function numberOrNull(value) {
 function scaleNutritionValue(value, factor) {
   if (typeof value !== "number") return null;
   return Math.round(value * factor * 100) / 100;
+}
+
+function toDisplayText(value, fallback = "Something went wrong.") {
+  if (typeof value === "string") return value;
+  if (value == null) return fallback;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => item?.msg || item?.message || toDisplayText(item, ""))
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (typeof value === "object") {
+    return value.msg || value.message || JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function apiErrorMessage(data, fallback) {
+  return toDisplayText(data?.detail || data?.message, fallback);
+}
+
+function decodeUserFromToken(activeToken) {
+  try {
+    const [, payloadPart] = activeToken.split(".");
+    if (!payloadPart) return null;
+
+    const normalizedPayload = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const paddedPayload = normalizedPayload.padEnd(
+      normalizedPayload.length + ((4 - (normalizedPayload.length % 4)) % 4),
+      "=",
+    );
+    const payload = JSON.parse(atob(paddedPayload));
+    if (!payload?.sub) return null;
+
+    return {
+      id: payload.uid || 0,
+      name: payload.name || payload.sub.split("@")[0],
+      email: payload.sub,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default function App() {
@@ -56,7 +230,10 @@ export default function App() {
   const [loadingMeals, setLoadingMeals] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [showAlternative, setShowAlternative] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantMessages, setAssistantMessages] = useState([]);
+  const [assistantInput, setAssistantInput] = useState("");
+  const [assistantLoading, setAssistantLoading] = useState(false);
 
   const nutrition = prediction?.nutrition || {};
   const validPortionGrams = Math.max(Number(portionGrams) || 0, 0);
@@ -69,12 +246,15 @@ export default function App() {
     carbs_g: scaleNutritionValue(nutrition.carbs_g, portionFactor),
     fat_g: scaleNutritionValue(nutrition.fat_g, portionFactor),
   };
-  const canSaveMeal = prediction && hasNutritionData && currentUser && (!isPer100Gram || validPortionGrams > 0);
+  const canSaveMeal = prediction && currentUser && (!isPer100Gram || validPortionGrams > 0);
 
   const confidencePercent = useMemo(() => {
     if (!prediction) return 0;
     return Math.round(prediction.confidence * 100);
   }, [prediction]);
+  const detectedFoodLabel = formatFoodName(prediction?.food);
+  const detectedFoodEmoji = getFoodEmoji(prediction?.food);
+  const activeAssistantActions = prediction ? assistantActions : trackerAssistantActions;
 
   useEffect(() => {
     if (token) {
@@ -87,6 +267,25 @@ export default function App() {
       loadMeals();
     }
   }, [mealDate, currentUser?.email, token]);
+
+  useEffect(() => {
+    if (!assistantOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setAssistantOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [assistantOpen]);
 
   function authHeaders(activeToken = token) {
     return { Authorization: `Bearer ${activeToken}` };
@@ -103,13 +302,31 @@ export default function App() {
         headers: authHeaders(activeToken),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Session expired.");
+      if (!response.ok) {
+        if (response.status === 503) {
+          const tokenUser = decodeUserFromToken(activeToken);
+          if (tokenUser) {
+            setCurrentUser(tokenUser);
+            setViewMode("dashboard");
+            setMessage(data.detail || "Database is temporarily unavailable, but your session is preserved.");
+            return;
+          }
+        }
+        throw new Error(data.detail || "Session expired.");
+      }
       setCurrentUser(data);
       setViewMode("dashboard");
-    } catch {
-      localStorage.removeItem("food_auth_token");
-      setToken("");
-      setCurrentUser(null);
+    } catch (error) {
+      const tokenUser = decodeUserFromToken(activeToken);
+      if (tokenUser && error instanceof TypeError) {
+        setCurrentUser(tokenUser);
+        setViewMode("dashboard");
+        setMessage("Backend is still starting. Your session is preserved.");
+      } else {
+        localStorage.removeItem("food_auth_token");
+        setToken("");
+        setCurrentUser(null);
+      }
     } finally {
       setCheckingAuth(false);
     }
@@ -161,7 +378,9 @@ export default function App() {
     setPrediction(null);
     setPortionGrams(100);
     setMessage("");
-    setShowAlternative(false);
+    setAssistantOpen(false);
+    setAssistantMessages([]);
+    setAssistantInput("");
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(file ? URL.createObjectURL(file) : "");
   }
@@ -175,7 +394,9 @@ export default function App() {
 
     setLoadingPredict(true);
     setMessage("");
-    setShowAlternative(false);
+    setAssistantOpen(false);
+    setAssistantMessages([]);
+    setAssistantInput("");
 
     const formData = new FormData();
     formData.append("file", imageFile);
@@ -193,6 +414,85 @@ export default function App() {
     } finally {
       setLoadingPredict(false);
     }
+  }
+
+  function assistantNutritionPayload() {
+    return {
+      serving: isPer100Gram ? `${validPortionGrams} g` : nutrition.serving || null,
+      calories: numberOrNull(scaledNutrition.calories),
+      protein_g: numberOrNull(scaledNutrition.protein_g),
+      carbs_g: numberOrNull(scaledNutrition.carbs_g),
+      fat_g: numberOrNull(scaledNutrition.fat_g),
+      source: nutrition.source || null,
+    };
+  }
+
+  async function askAssistant(action) {
+    if (!currentUser || assistantLoading) return;
+
+    const foodLabel = prediction ? formatFoodName(prediction.food) : "today's saved meals";
+    const question = action.prompt.replace("{food}", foodLabel);
+    const userMessage = {
+      role: "user",
+      content: action.displayText || action.label || question,
+    };
+
+    setAssistantOpen(true);
+    setAssistantInput("");
+    setAssistantMessages((previous) => [...previous, userMessage]);
+    setAssistantLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/nutrition-chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          food_name: prediction?.food || null,
+          confidence: prediction?.confidence || null,
+          nutrition: prediction ? assistantNutritionPayload() : {},
+          question,
+          intent: action.id || "custom",
+          meal_date: mealDate,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(apiErrorMessage(data, "Assistant request failed."));
+
+      setAssistantMessages((previous) => [
+        ...previous,
+        {
+          role: "assistant",
+          content: toDisplayText(data.answer, "The assistant did not return a text answer."),
+          ragEnabled: data.rag_enabled,
+          answerSource: data.answer_source,
+          sources: data.sources || [],
+        },
+      ]);
+    } catch (error) {
+      setAssistantMessages((previous) => [
+        ...previous,
+        {
+          role: "assistant",
+          content: error.message || "The assistant could not respond right now.",
+          error: true,
+        },
+      ]);
+    } finally {
+      setAssistantLoading(false);
+    }
+  }
+
+  function submitAssistantQuestion(event) {
+    event.preventDefault();
+    const question = assistantInput.trim();
+    if (!question) return;
+
+    askAssistant({
+      id: "custom",
+      label: question,
+      displayText: question,
+      prompt: question,
+    });
   }
 
   async function loadMeals() {
@@ -478,16 +778,40 @@ export default function App() {
             </button>
           </form>
 
-          <div className="result-band">
-            <div>
-              <p className="label">Detected food</p>
-              <h2>{formatFoodName(prediction?.food)}</h2>
-            </div>
-            <div className="confidence">
-              <span>{confidencePercent}%</span>
-              <small>confidence</small>
+          <div className="detection-card">
+            <div className="detection-header">
+              <div className="detected-food">
+                <span className="food-emoji" aria-hidden="true">
+                  {detectedFoodEmoji}
+                </span>
+                <div>
+                  <p className="label">Detected food</p>
+                  <h2>{detectedFoodLabel}</h2>
+                </div>
+              </div>
+              <div className="confidence">
+                <span>{prediction ? `${confidencePercent}%` : "--"}</span>
+                <small>confidence</small>
+              </div>
             </div>
           </div>
+
+          <div className="nutrition-grid compact-card-grid">
+            <Metric label="Calories" value={scaledNutrition.calories} unit="kcal" />
+            <Metric label="Protein" value={scaledNutrition.protein_g} unit="g" />
+            <Metric label="Carbs" value={scaledNutrition.carbs_g} unit="g" />
+            <Metric label="Fat" value={scaledNutrition.fat_g} unit="g" />
+          </div>
+
+          <button
+            className="assistant-launch"
+            type="button"
+            disabled={!currentUser}
+            onClick={() => setAssistantOpen(true)}
+          >
+            <MessageCircle size={20} aria-hidden="true" />
+            <span>Ask AI Nutrition Assistant</span>
+          </button>
 
           {prediction?.gradcam_image && (
             <div className="explainability-grid">
@@ -501,13 +825,6 @@ export default function App() {
               </figure>
             </div>
           )}
-
-          <div className="nutrition-grid">
-            <Metric label="Calories" value={scaledNutrition.calories} unit="kcal" />
-            <Metric label="Protein" value={scaledNutrition.protein_g} unit="g" />
-            <Metric label="Carbs" value={scaledNutrition.carbs_g} unit="g" />
-            <Metric label="Fat" value={scaledNutrition.fat_g} unit="g" />
-          </div>
 
           <div className="portion-row">
             <label>
@@ -527,30 +844,11 @@ export default function App() {
               {!prediction
                 ? "Upload an image to fetch nutrition data from APIs."
                 : !hasNutritionData
-                  ? "Nutrition data is unavailable because the configured APIs did not return a match."
+                  ? "Nutrition data is unavailable."
                   : isPer100Gram
-                    ? `Values are scaled from a ${nutrition.serving} estimate.`
+                    ? `Values are scaled from a ${nutrition.serving || "100 g"} estimate.`
                     : `Values use ${nutrition.serving || "standard serving"} estimate.`}
             </p>
-          </div>
-
-          <div className="suggestion">
-            <Utensils size={18} aria-hidden="true" />
-            {!prediction ? (
-              <p>Analyze a food image to see a healthier swap.</p>
-            ) : !showAlternative ? (
-              <button
-                type="button"
-                className="suggestion-btn"
-                onClick={() => setShowAlternative(true)}
-              >
-                See Healthy Alternative
-              </button>
-            ) : (
-              <p>
-                {prediction.healthy_alternative || "Healthy alternative is unavailable. Add a Gemini API key to fetch it."}
-              </p>
-            )}
           </div>
 
           <div className="save-row">
@@ -614,6 +912,90 @@ export default function App() {
           </div>
         </aside>
       </section>
+
+      {assistantOpen && currentUser && (
+        <div
+          className="assistant-modal"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setAssistantOpen(false);
+            }
+          }}
+        >
+          <section className="assistant-panel assistant-dialog" role="dialog" aria-modal="true" aria-label="AI Nutrition Assistant">
+            <div className="assistant-topline">
+              <div className="assistant-head">
+                <div className="assistant-avatar">
+                  <Bot size={20} aria-hidden="true" />
+                </div>
+                <div>
+                  <h3>AI Nutrition Assistant</h3>
+                  {prediction ? (
+                    <p>
+                      I detected {detectedFoodLabel} {detectedFoodEmoji}
+                    </p>
+                  ) : (
+                    <p>Meal tracker mode</p>
+                  )}
+                  <span>{prediction ? "What would you like to know?" : "Ask about today's saved meals."}</span>
+                </div>
+              </div>
+              <button className="assistant-close" type="button" onClick={() => setAssistantOpen(false)} aria-label="Close assistant">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="assistant-actions">
+              {activeAssistantActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className="assistant-chip"
+                  disabled={assistantLoading}
+                  onClick={() => askAssistant(action)}
+                >
+                  <span aria-hidden="true">{action.icon}</span>
+                  {action.label}
+                </button>
+              ))}
+            </div>
+
+            {(assistantMessages.length > 0 || assistantLoading) && (
+              <div className="assistant-messages">
+                {assistantMessages.map((chatMessage, index) => (
+                  <div
+                    className={`assistant-message ${chatMessage.role}${chatMessage.error ? " error" : ""}`}
+                    key={`${chatMessage.role}-${index}-${chatMessage.content}`}
+                  >
+                    <p>{formatAssistantMessage(chatMessage.content)}</p>
+                    {chatMessage.role === "assistant" && chatMessage.error && (
+                      <small>Error</small>
+                    )}
+                  </div>
+                ))}
+                {assistantLoading && (
+                  <div className="assistant-message assistant">
+                    <Loader2 className="spin" size={16} aria-hidden="true" />
+                    <p>Thinking...</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <form className="assistant-input-row" onSubmit={submitAssistantQuestion}>
+              <input
+                value={assistantInput}
+                onChange={(event) => setAssistantInput(event.target.value)}
+                placeholder={prediction ? "Ask about this meal" : "Ask about today's meals"}
+                disabled={assistantLoading}
+              />
+              <button type="submit" aria-label="Send nutrition question" disabled={assistantLoading || !assistantInput.trim()}>
+                <Send size={18} />
+              </button>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
@@ -626,4 +1008,35 @@ function Metric({ label, value, unit, compact = false }) {
       <small>{unit}</small>
     </div>
   );
+}
+
+function formatAssistantMessage(content) {
+  if (!content) return null;
+  return content.split("\n").map((line, lineIndex) => {
+    let cleanLine = line.trim();
+    let isBullet = false;
+
+    if (cleanLine.startsWith("* ") || cleanLine.startsWith("- ")) {
+      cleanLine = cleanLine.slice(2).trim();
+      isBullet = true;
+    } else if (cleanLine.startsWith("• ")) {
+      cleanLine = cleanLine.slice(2).trim();
+      isBullet = true;
+    }
+
+    const parts = cleanLine.split(/(\*\*[^*]+\*\*)/g).map((part, partIndex) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={`${lineIndex}-${partIndex}`}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+
+    return (
+      <React.Fragment key={lineIndex}>
+        {lineIndex > 0 && <br />}
+        {isBullet ? <span className="bullet-point">• </span> : null}
+        {parts}
+      </React.Fragment>
+    );
+  });
 }
