@@ -1,3 +1,13 @@
+---
+title: Smart Food Nutrition Analyzer API
+emoji: 🥗
+colorFrom: green
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Smart Food Nutrition Analyzer
 
 A full-stack AI-powered food analysis platform that identifies food items from images, estimates nutritional values, provides healthier alternatives, and tracks daily meal intake.
